@@ -4,48 +4,91 @@ on:
   push:
     branches:
       - main
-  pull_request:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Select Terraform action"
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - apply
+          - plan-and-apply
+          - destroy
+      aws_region:
+        description: "AWS Region"
+        required: false
+        default: us-east-1
+        type: choice
+        options:
+          - us-east-1
+          - us-west-1
+          - us-west-2
+          - eu-west-1
+          - eu-central-1
+          - ap-south-1
+          - ap-southeast-1
+          - ap-northeast-1
+          - ap-northeast-2
+          - sa-east-1
+      destroy_token:
+        description: "Enter destroy token (only for destroy)"
+        required: false
+        type: string
 
 jobs:
   terraform:
-    name: Terraform Plan and Apply
+    name: Terraform Plan, Apply or Destroy
     runs-on: ubuntu-latest
-
     environment: production
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
 
-    - name: Replace Variables
-      run: |
-        sed -i "s|{{DB_NAME}}|${{ secrets.DB_NAME }}|g" terraform.tfvars
-        sed -i "s|{{DB_USERNAME}}|${{ secrets.DB_USERNAME }}|g" terraform.tfvars
-        sed -i "s|{{DB_PASSWORD}}|${{ secrets.DB_PASSWORD }}|g" terraform.tfvars
+      - name: Replace Variables in tfvars
+        run: |
+          sed -i "s|{{DB_NAME}}|${{ secrets.DB_NAME }}|g" terraform.tfvars
+          sed -i "s|{{DB_USERNAME}}|${{ secrets.DB_USERNAME }}|g" terraform.tfvars
+          sed -i "s|{{DB_PASSWORD}}|${{ secrets.DB_PASSWORD }}|g" terraform.tfvars
 
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v3
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ github.event.inputs.aws_region || 'us-east-1' }}
 
-    - name: Terraform Init
-      run: terraform init
+      - name: Terraform Init
+        run: terraform init
 
-    - name: Terraform Validate
-      run: terraform validate
+      - name: Terraform Validate
+        run: terraform validate
 
-    - name: Terraform fmt
-      run: terraform fmt
+      - name: Terraform Format
+        run: terraform fmt
 
-    - name: Terraform Plan
-      run: terraform plan -var-file="terraform.tfvars"
+      - name: Terraform Plan
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.action == 'plan' || github.event.inputs.action == 'plan-and-apply'
+        run: terraform plan -var-file="terraform.tfvars"
 
-    # Optional: Enable below to auto-apply (not always recommended on every push)
-    # - name: Terraform Apply
-    #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    #   run: terraform apply -auto-approve -var-file="terraform.tfvars"
+      - name: Terraform Apply
+        if: github.event_name == 'push' || github.event.inputs.action == 'apply' || github.event.inputs.action == 'plan-and-apply'
+        run: terraform apply -auto-approve -var-file="terraform.tfvars"
+
+      - name: Validate Destroy Token
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+        run: |
+          if [ "${{ github.event.inputs.destroy_token }}" != "${{ secrets.DESTROY_TOKEN }}" ]; then
+            echo "❌ Invalid destroy token"
+            exit 1
+          fi
+          echo "✅ Destroy token validated"
+
+      - name: Terraform Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+        run: terraform destroy -auto-approve -var-file="terraform.tfvars"
