@@ -19,8 +19,12 @@ jobs:
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: 1.6.6
+
+    - name: Replace Variables
+      run: |
+        sed -i "s|{{DB_NAME}}|${{ secrets.DB_NAME }}|g" terraform.tfvars
+        sed -i "s|{{DB_USERNAME}}|${{ secrets.DB_USERNAME }}|g" terraform.tfvars
+        sed -i "s|{{DB_PASSWORD}}|${{ secrets.DB_PASSWORD }}|g" terraform.tfvars
 
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v3
