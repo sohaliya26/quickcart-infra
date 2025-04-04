@@ -2,6 +2,16 @@ provider "aws" {
   region = var.aws_region
 }
 
+terraform {
+  backend "s3" {
+    bucket         = "quickcart-tf-state-bucket"
+    key            = "env/dev/terraform.tfstate"  # path inside S3 bucket
+    region         = "us-east-1"
+    dynamodb_table = "terraform-lock-table"
+    encrypt        = true
+  }
+}
+
 # module "rds" {
 #   source            = "./modules/rds"
 #   db_name           = var.db_name
